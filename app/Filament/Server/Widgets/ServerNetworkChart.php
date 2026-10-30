@@ -14,6 +14,10 @@ class ServerNetworkChart extends ChartWidget
 
     protected ?string $maxHeight = '200px';
 
+    // Mounted with the page: canView() depends on the live server status, and Filament
+    // re-checks it on the lazy-load request, which 403s if the status changed in between.
+    protected static bool $isLazy = false;
+
     public ?Server $server = null;
 
     public static function canView(): bool
