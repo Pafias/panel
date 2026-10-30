@@ -21,17 +21,31 @@
     @vite(['resources/js/console.js', 'resources/css/console.css'])
     @endassets
 
-    <div id="terminal" wire:ignore></div>
+    <div @class(['console-terminal', 'console-terminal--standalone' => !$this->authorizeSendCommand()]) wire:ignore>
+        <div id="terminal"></div>
+
+        <button
+            id="terminal-scroll-bottom"
+            class="console-scroll-bottom"
+            type="button"
+            tabindex="-1"
+            aria-hidden="true"
+            title="{{ trans('server/console.scroll_to_bottom') }}"
+            aria-label="{{ trans('server/console.scroll_to_bottom') }}"
+        >
+            <x-filament::icon icon="tabler-arrow-down" class="h-4 w-4" />
+        </button>
+    </div>
 
     @if ($this->authorizeSendCommand())
-        <div class="flex items-center w-full border-top overflow-hidden dark:bg-gray-900"
-             style="border-bottom-right-radius: 10px; border-bottom-left-radius: 10px;">
+        <div class="console-command" style="font-family: '{{ $userFont }}', monospace;">
             <x-filament::icon
                 icon="tabler-chevrons-right"
+                class="console-command-icon h-4 w-4 shrink-0"
             />
             <input
                 id="send-command"
-                class="w-full focus:outline-none focus:ring-0 border-none dark:bg-gray-900 p-1"
+                class="w-full bg-transparent border-none p-0 focus:outline-none focus:ring-0"
                 type="text"
                 :readonly="{{ $this->canSendCommand() ? 'false' : 'true' }}"
                 title="{{ $this->canSendCommand() ? '' : trans('server/console.command_blocked_title') }}"
@@ -47,7 +61,8 @@
     @script
     <script>
         let theme = {
-            background: 'rgba(19,26,32,0.7)',
+            // The padded .console-terminal wrapper paints the background, so the padding matches.
+            background: 'rgba(0,0,0,0)',
             cursor: 'transparent',
             black: '#000000',
             red: '#E54B4B',
@@ -97,6 +112,23 @@
         terminal.open(document.getElementById('terminal'));
 
         fitAddon.fit(); // Fixes SPA issues.
+
+        const scrollBottomButton = document.getElementById('terminal-scroll-bottom');
+
+        const updateScrollBottomButton = () => {
+            const buffer = terminal.buffer.active;
+            const scrolledUp = buffer.viewportY < buffer.baseY;
+
+            scrollBottomButton.classList.toggle('is-visible', scrolledUp);
+            scrollBottomButton.tabIndex = scrolledUp ? 0 : -1;
+            scrollBottomButton.setAttribute('aria-hidden', scrolledUp ? 'false' : 'true');
+        };
+
+        // onRender also covers wheel/scrollbar scrolling and output arriving while scrolled up.
+        terminal.onScroll(updateScrollBottomButton);
+        terminal.onRender(updateScrollBottomButton);
+
+        scrollBottomButton.addEventListener('click', () => terminal.scrollToBottom());
 
         window.addEventListener('load', () => {
             fitAddon.fit();
@@ -345,6 +377,8 @@
         });
 
         $wire.on('sendServerCommand', ({ command }) => {
+            terminal.scrollToBottom();
+
             sendAction({
                 'event': 'send command',
                 'args': [command]
