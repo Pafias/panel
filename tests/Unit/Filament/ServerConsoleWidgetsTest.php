@@ -37,3 +37,16 @@ it('still finds filament listening for updateChartData in the browser', function
 
     expect($chartJs)->toMatch('/addEventListener\((["\'])updateChartData\1/');
 });
+
+// Filament re-runs canView() on the lazy-load request and aborts with a 403 when
+// it fails. The charts' canView() depends on the live server status, which can
+// change between the page render and that request, so they must mount eagerly.
+it('mounts the status-dependent charts with the page', function (string $widget) {
+    $property = new ReflectionProperty($widget, 'isLazy');
+
+    expect($property->getValue())->toBeFalse();
+})->with([
+    ServerCpuChart::class,
+    ServerMemoryChart::class,
+    ServerNetworkChart::class,
+]);
