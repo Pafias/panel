@@ -128,11 +128,11 @@ class Console extends Page
 
         $allWidgets = array_merge($allWidgets, static::$customWidgets[ConsoleWidgetPosition::Top->value] ?? []);
 
-        $allWidgets[] = ServerOverview::class;
-
         $allWidgets = array_merge($allWidgets, static::$customWidgets[ConsoleWidgetPosition::AboveConsole->value] ?? []);
 
         $allWidgets[] = ServerConsole::class;
+
+        $allWidgets[] = ServerOverview::class;
 
         $allWidgets = array_merge($allWidgets, static::$customWidgets[ConsoleWidgetPosition::BelowConsole->value] ?? []);
 
