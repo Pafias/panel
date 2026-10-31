@@ -4,6 +4,7 @@ namespace App\Filament\App\Resources\Servers;
 
 use App\Enums\TablerIcon;
 use App\Filament\App\Resources\Servers\Pages\ListServers;
+use App\Filament\App\Resources\Servers\Pages\MultiConsole;
 use App\Models\Server;
 use BackedEnum;
 use Filament\Resources\Resource;
@@ -32,6 +33,7 @@ class ServerResource extends Resource
     {
         return [
             'index' => ListServers::route('/'),
+            'consoles' => MultiConsole::route('/consoles'),
         ];
     }
 

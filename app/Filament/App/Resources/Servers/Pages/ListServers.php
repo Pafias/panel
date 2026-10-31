@@ -162,6 +162,18 @@ class ListServers extends ListRecords
             ]);
     }
 
+    /** @return Action[] */
+    protected function getDefaultHeaderActions(): array
+    {
+        return [
+            Action::make('multi_console')
+                ->label(trans('server/dashboard.multi_console.open'))
+                ->icon(TablerIcon::LayoutGrid)
+                ->color('gray')
+                ->url(fn () => MultiConsole::getUrl()),
+        ];
+    }
+
     public function updatedActiveTab(): void
     {
         $this->resetTable();

@@ -1,4 +1,4 @@
-<x-filament::widget>
+<x-filament::widget :class="$this->compact ? 'console-pane' : null">
     @assets
     @php
         $userFont = (string) user()?->getCustomization(\App\Enums\CustomizationKey::ConsoleFont);
@@ -21,11 +21,28 @@
     @vite(['resources/js/console.js', 'resources/css/console.css'])
     @endassets
 
+    @if ($this->compact)
+        <div class="console-pane-header" draggable="true">
+            <x-filament::icon icon="tabler-grip-vertical" class="console-pane-grip h-4 w-4" />
+
+            <a
+                href="{{ \App\Filament\Server\Pages\Console::getUrl(panel: 'server', tenant: $this->server) }}"
+                class="console-pane-title"
+                title="{{ $this->server->name }}"
+                draggable="false"
+            >{{ $this->server->name }}</a>
+
+            <span class="console-pane-status" data-state="" wire:ignore>
+                <span class="console-pane-status-dot"></span>
+                <span class="console-pane-status-label">{{ \App\Filament\Server\Widgets\ServerOverview::UNKNOWN }}</span>
+            </span>
+        </div>
+    @endif
+
     <div @class(['console-terminal', 'console-terminal--standalone' => !$this->authorizeSendCommand()]) wire:ignore>
-        <div id="terminal"></div>
+        <div class="console-terminal-screen"></div>
 
         <button
-            id="terminal-scroll-bottom"
             class="console-scroll-bottom"
             type="button"
             tabindex="-1"
@@ -44,8 +61,7 @@
                 class="console-command-icon h-4 w-4 shrink-0"
             />
             <input
-                id="send-command"
-                class="w-full bg-transparent border-none p-0 focus:outline-none focus:ring-0"
+                class="console-command-input w-full bg-transparent border-none p-0 focus:outline-none focus:ring-0"
                 type="text"
                 :readonly="{{ $this->canSendCommand() ? 'false' : 'true' }}"
                 title="{{ $this->canSendCommand() ? '' : trans('server/console.command_blocked_title') }}"
@@ -60,6 +76,12 @@
 
     @script
     <script>
+        // Look elements up from this component, not the document: the multi-console
+        // page renders one of these per server.
+        const root = $wire.$el;
+        const compact = @js($this->compact);
+        const serverUuid = @js($this->server->uuid);
+
         let theme = {
             // The padded .console-terminal wrapper paints the background, so the padding matches.
             background: 'rgba(0,0,0,0)',
@@ -107,13 +129,24 @@
         terminal.loadAddon(webLinksAddon);
         terminal.loadAddon(searchAddon);
         terminal.loadAddon(searchAddonBar);
+
+        // Browsers cap live WebGL contexts (about 16 in Chrome) and drop the oldest
+        // past that, so fall back to the DOM renderer rather than going blank.
+        webglAddon.onContextLoss(() => webglAddon.dispose());
         terminal.loadAddon(webglAddon);
 
-        terminal.open(document.getElementById('terminal'));
+        const screen = root.querySelector('.console-terminal-screen');
+
+        terminal.open(screen);
 
         fitAddon.fit(); // Fixes SPA issues.
 
-        const scrollBottomButton = document.getElementById('terminal-scroll-bottom');
+        // A pane's size comes from the grid, not the window, so refit whenever it changes.
+        if (compact) {
+            new ResizeObserver(() => fitAddon.fit()).observe(screen);
+        }
+
+        const scrollBottomButton = root.querySelector('.console-scroll-bottom');
 
         const updateScrollBottomButton = () => {
             const buffer = terminal.buffer.active;
@@ -129,6 +162,10 @@
         terminal.onRender(updateScrollBottomButton);
 
         scrollBottomButton.addEventListener('click', () => terminal.scrollToBottom());
+
+        // xterm scrolls its buffer itself and lets the wheel event through once it hits
+        // the top or bottom, which then scrolls the page; keep the wheel inside the console.
+        root.querySelector('.console-terminal').addEventListener('wheel', (event) => event.preventDefault(), { passive: false });
 
         window.addEventListener('load', () => {
             fitAddon.fit();
@@ -152,7 +189,7 @@
             return true;
         });
 
-        const TERMINAL_PRELUDE = '\u001b[1m\u001b[33m{{ $terminalPrelude }}@' + '{{ \Filament\Facades\Filament::getTenant()->name }}' + ' ~ \u001b[0m';
+        const TERMINAL_PRELUDE = '\u001b[1m\u001b[33m{{ $terminalPrelude }}@' + @js($this->server->name) + ' ~ \u001b[0m';
 
         const handleConsoleOutput = (line, prelude = false) =>
             terminal.writeln((prelude ? TERMINAL_PRELUDE : '') + line.replace(/(?:\r\n|\r|\n)$/im, '') + '\u001b[0m');
@@ -173,16 +210,33 @@
         let authenticated = false;
         const pendingActions = [];
 
-        window.ServerStats.configure({
-            uuid: @js($this->server->uuid),
-            binaryPrefix: @js((bool) config('panel.use_binary_prefix')),
-            period: @js((int) user()?->getCustomization(\App\Enums\CustomizationKey::ConsoleGraphPeriod)),
-            locale: @js(str_replace('_', '-', user()->language ?? 'en')),
-            timezone: @js(user()->timezone ?? 'UTC'),
-            offlineLabel: @js(\App\Enums\ContainerStatus::Offline->getLabel()),
-            unknownLabel: @js(\App\Filament\Server\Widgets\ServerOverview::UNKNOWN),
-            statusLabels: @js(collect(\App\Enums\ContainerStatus::cases())->mapWithKeys(fn ($case) => [$case->value => $case->getLabel()])),
-        });
+        const statusLabels = @js(collect(\App\Enums\ContainerStatus::cases())->mapWithKeys(fn ($case) => [$case->value => $case->getLabel()]));
+
+        // Compact panes show the state in their own header; window.ServerStats and the
+        // stats widgets belong to the single-server console page.
+        const setPaneStatus = (state) => {
+            const status = root.querySelector('.console-pane-status');
+
+            if (!status || typeof state !== 'string') {
+                return;
+            }
+
+            status.dataset.state = state;
+            status.querySelector('.console-pane-status-label').textContent = statusLabels[state] ?? state;
+        };
+
+        if (!compact) {
+            window.ServerStats.configure({
+                uuid: serverUuid,
+                binaryPrefix: @js((bool) config('panel.use_binary_prefix')),
+                period: @js((int) user()?->getCustomization(\App\Enums\CustomizationKey::ConsoleGraphPeriod)),
+                locale: @js(str_replace('_', '-', user()->language ?? 'en')),
+                timezone: @js(user()->timezone ?? 'UTC'),
+                offlineLabel: @js(\App\Enums\ContainerStatus::Offline->getLabel()),
+                unknownLabel: @js(\App\Filament\Server\Widgets\ServerOverview::UNKNOWN),
+                statusLabels: statusLabels,
+            });
+        }
 
         let statusIsLive = @js($this->server->status === null);
 
@@ -195,6 +249,10 @@
         };
 
         const pushToWidgets = () => {
+            if (compact) {
+                return;
+            }
+
             Livewire.dispatchTo(@js($componentName(\App\Filament\Server\Widgets\ServerCpuChart::class)), 'updateChartData', { data: window.ServerStats.cpuData() });
             Livewire.dispatchTo(@js($componentName(\App\Filament\Server\Widgets\ServerMemoryChart::class)), 'updateChartData', { data: window.ServerStats.memoryData() });
             Livewire.dispatchTo(@js($componentName(\App\Filament\Server\Widgets\ServerNetworkChart::class)), 'updateChartData', { data: window.ServerStats.networkData() });
@@ -243,7 +301,7 @@
             \App\Filament\Server\Widgets\ServerNetworkChart::class,
         ])->map($componentName)->values());
 
-        const stopReplayingOnWidgetLoad = Livewire.hook('commit', ({ component, succeed }) => {
+        const stopReplayingOnWidgetLoad = compact ? () => {} : Livewire.hook('commit', ({ component, succeed }) => {
             if (widgetNames.includes(component.name)) {
                 succeed(() => setTimeout(pushToWidgets));
             }
@@ -299,18 +357,30 @@
                         break;
                     case 'install completed':
                         statusIsLive = true;
-                        $wire.dispatch('refresh-sidebar');
-                        $wire.dispatch('refresh-topbar');
-                        $wire.dispatch('removeAlertBanner', { id: 'server_conflict' });
+
+                        if (!compact) {
+                            $wire.dispatch('refresh-sidebar');
+                            $wire.dispatch('refresh-topbar');
+                            $wire.dispatch('removeAlertBanner', { id: 'server_conflict' });
+                        }
+
+                        $wire.dispatch('console-status', { uuid: serverUuid });
                         break;
                     case 'feature match':
-                        Livewire.dispatch('mount-feature', { data: args[0] });
+                        if (!compact) {
+                            Livewire.dispatch('mount-feature', { data: args[0] });
+                        }
                         break;
                     case 'status':
                         handlePowerChangeEvent(args[0]);
-                        window.ServerStats.setState(args[0]);
-                        pushToWidgets();
-                        $wire.dispatch('console-status', { state: args[0] });
+                        setPaneStatus(args[0]);
+
+                        if (!compact) {
+                            window.ServerStats.setState(args[0]);
+                            pushToWidgets();
+                        }
+
+                        $wire.dispatch('console-status', { state: args[0], uuid: serverUuid });
                         break;
                     case 'transfer status':
                         handleTransferStatus(args[0]);
@@ -319,7 +389,13 @@
                         handleDaemonErrorOutput(args[0]);
                         break;
                     case 'stats':
-                        if (window.ServerStats.push(args[0])) {
+                        if (compact) {
+                            try {
+                                const stats = typeof args[0] === 'string' ? JSON.parse(args[0]) : args[0];
+
+                                setPaneStatus(stats?.state);
+                            } catch {}
+                        } else if (window.ServerStats.push(args[0])) {
                             pushToWidgets();
                         }
                         break;
@@ -347,7 +423,6 @@
         connect();
 
         const stopListeningForServerState = Livewire.on('setServerState', ({ state, uuid }) => {
-            const serverUuid = "{{ $this->server->uuid }}";
             if (uuid !== serverUuid) {
                 return;
             }

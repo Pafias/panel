@@ -161,7 +161,7 @@ class Console extends Page
     }
 
     #[On('console-status')]
-    public function receivedConsoleUpdate(?string $state = null): void
+    public function receivedConsoleUpdate(?string $state = null, ?string $uuid = null): void
     {
         /** @var Server $server */
         $server = Filament::getTenant();
