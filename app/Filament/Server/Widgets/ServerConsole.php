@@ -29,6 +29,10 @@ class ServerConsole extends Widget
 
     public ?User $user = null;
 
+    // Set by the multi-console page: several consoles share one document there,
+    // so this one skips the page-wide stats widgets and fills its pane instead.
+    public bool $compact = false;
+
     /** @var string[] */
     #[Session(key: 'server.{server.id}.history')]
     public array $history = [];
@@ -38,6 +42,13 @@ class ServerConsole extends Widget
     public string $input = '';
 
     private GetUserPermissionsService $getUserPermissionsService;
+
+    /** @return int|string|array<string, int|null> */
+    public function getColumnSpan(): int|string|array
+    {
+        // On the multi-console page the grid places the panes, so don't claim the full row.
+        return $this->compact ? 1 : $this->columnSpan;
+    }
 
     private NodeJWTService $nodeJWTService;
 
@@ -117,8 +128,13 @@ class ServerConsole extends Widget
     // Without the old per-frame stats round trip nothing else re-renders this widget,
     // so cache the new state here or the command input stays locked until a reload.
     #[On('console-status')]
-    public function receivedConsoleStatus(?string $state = null): void
+    public function receivedConsoleStatus(?string $state = null, ?string $uuid = null): void
     {
+        // The event is global, so with several consoles on a page skip the other servers' updates.
+        if ($uuid !== null && $uuid !== $this->server->uuid) {
+            return;
+        }
+
         if ($state && ($status = ContainerStatus::tryFrom($state))) {
             cache()->put("servers.{$this->server->uuid}.status", $status, now()->addSeconds(15));
         }

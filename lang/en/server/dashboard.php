@@ -25,4 +25,16 @@ return [
 
     'power_actions' => 'Power Actions',
     'power_action_sent' => ':action sent to :name',
+
+    'multi_console' => [
+        'title' => 'Multi Console',
+        'open' => 'Multi Console',
+        'choose' => 'Choose Servers',
+        'submit' => 'Open',
+        'servers' => 'Servers',
+        'servers_helper' => 'Up to :max servers. Only servers whose console you can open are listed.',
+        'columns' => 'Columns',
+        'empty' => 'No servers chosen',
+        'empty_description' => 'Choose the servers whose consoles you want to watch side by side.',
+    ],
 ];

@@ -30,7 +30,7 @@ abstract class PanelProvider extends BasePanelProvider
     public function panel(Panel $panel): Panel
     {
         return $panel
-            ->spa(fn () => !request()->routeIs('filament.server.pages.console'))
+            ->spa(fn () => !request()->routeIs('filament.server.pages.console', 'filament.app.resources.*consoles'))
             ->spaUrlExceptions([
                 '*/oauth/redirect/*',
             ])
