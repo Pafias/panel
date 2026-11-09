@@ -105,8 +105,12 @@
             selection: '#FAF089'
         };
 
+        // Phones fit few columns at the profile's font size, so shrink it on narrow screens.
+        const narrowScreen = window.matchMedia('(max-width: 639px)');
+        const fontSizeFor = (narrow) => narrow ? Math.max(8, Math.min({{ $userFontSize }}, Math.round({{ $userFontSize }} * 0.7))) : {{ $userFontSize }};
+
         let options = {
-            fontSize: {{ $userFontSize }},
+            fontSize: fontSizeFor(narrowScreen.matches),
             fontFamily: '{{ $userFont }}, monospace',
             lineHeight: 1.2,
             disableStdin: true,
@@ -145,6 +149,14 @@
         if (compact) {
             new ResizeObserver(() => fitAddon.fit()).observe(screen);
         }
+
+        // Rotating the phone can cross the breakpoint.
+        const updateFontSize = (event) => {
+            terminal.options.fontSize = fontSizeFor(event.matches);
+            fitAddon.fit();
+        };
+
+        narrowScreen.addEventListener('change', updateFontSize);
 
         const scrollBottomButton = root.querySelector('.console-scroll-bottom');
 
@@ -538,6 +550,7 @@
             clearTimeout(reconnectTimer);
             stopListeningForServerState();
             stopReplayingOnWidgetLoad();
+            narrowScreen.removeEventListener('change', updateFontSize);
             socket?.close();
         }, { once: true });
 
