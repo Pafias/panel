@@ -167,6 +167,104 @@
         // the top or bottom, which then scrolls the page; keep the wheel inside the console.
         root.querySelector('.console-terminal').addEventListener('wheel', (event) => event.preventDefault(), { passive: false });
 
+        // xterm 6's scrollbar only handles the wheel, so touch drags did nothing; scroll
+        // the buffer by hand. A drag the console can't follow (already at that end, or
+        // sideways) is left to the page so the console never traps it.
+        const consoleElement = root.querySelector('.console-terminal');
+        let touch = null;
+        let momentumFrame = null;
+
+        const rowHeight = () => (screen.querySelector('.xterm-screen')?.clientHeight || 0) / terminal.rows || 16;
+
+        const canScroll = (lines) => {
+            const buffer = terminal.buffer.active;
+
+            return lines < 0 ? buffer.viewportY > 0 : buffer.viewportY < buffer.baseY;
+        };
+
+        // Scrolls by whole rows and keeps the leftover pixels for the next move.
+        const scrollByPixels = (pixels) => {
+            touch.remainder += pixels;
+            const lines = Math.trunc(touch.remainder / rowHeight());
+
+            if (lines !== 0) {
+                terminal.scrollLines(lines);
+                touch.remainder -= lines * rowHeight();
+            }
+        };
+
+        consoleElement.addEventListener('touchstart', (event) => {
+            cancelAnimationFrame(momentumFrame);
+
+            if (event.touches.length !== 1) {
+                touch = null;
+
+                return;
+            }
+
+            const { clientX, clientY } = event.touches[0];
+            touch = { startX: clientX, startY: clientY, lastY: clientY, lastTime: event.timeStamp, velocity: 0, remainder: 0, captured: null };
+        }, { passive: true });
+
+        consoleElement.addEventListener('touchmove', (event) => {
+            if (!touch || event.touches.length !== 1) {
+                return;
+            }
+
+            const { clientX, clientY } = event.touches[0];
+
+            if (touch.captured === null) {
+                const dx = clientX - touch.startX;
+                const dy = clientY - touch.startY;
+
+                if (Math.abs(dx) < 4 && Math.abs(dy) < 4) {
+                    return;
+                }
+
+                // Dragging the finger up moves the view down the log.
+                touch.captured = Math.abs(dy) > Math.abs(dx) && canScroll(-dy);
+            }
+
+            if (!touch.captured) {
+                return;
+            }
+
+            event.preventDefault();
+
+            const delta = touch.lastY - clientY;
+            const elapsed = Math.max(event.timeStamp - touch.lastTime, 1);
+            touch.velocity = delta / elapsed;
+            touch.lastY = clientY;
+            touch.lastTime = event.timeStamp;
+
+            scrollByPixels(delta);
+        }, { passive: false });
+
+        consoleElement.addEventListener('touchend', (event) => {
+            if (!touch?.captured || event.touches.length !== 0) {
+                return;
+            }
+
+            // Carry a flick on, slowing down, like native scrolling does.
+            let velocity = event.timeStamp - touch.lastTime > 100 ? 0 : touch.velocity;
+            let last = performance.now();
+
+            const step = (now) => {
+                const elapsed = now - last;
+                last = now;
+                velocity *= Math.pow(0.95, elapsed / 16);
+
+                if (!touch || Math.abs(velocity) < 0.02 || !canScroll(velocity)) {
+                    return;
+                }
+
+                scrollByPixels(velocity * elapsed);
+                momentumFrame = requestAnimationFrame(step);
+            };
+
+            momentumFrame = requestAnimationFrame(step);
+        });
+
         window.addEventListener('load', () => {
             fitAddon.fit();
         });
